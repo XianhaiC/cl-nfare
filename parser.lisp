@@ -76,24 +76,6 @@
   (cur-tok #\Nul :type character :read-only t)
   (next-pos 0 :type fixnum :read-only t))
 
-(defun make-lexer (str-exp)
-  ;; advance the freshly minted lexer once to 'start' it
-  ;; cur-token will be ready to be consumed once done
-  (lexer-adv (make-lexer-aux :str-exp str-exp :str-len (length str-exp))))
-
-(defun eol-p (lex)
-  (>= (lexer-next-pos lex) (lexer-str-len lex)))
-
-(defun char-num-p (char)
-  (let ((tok-val (char-code char)))
-    (and (>= tok-val (char-code #\0))
-	 (<= tok-val (char-code #\9)))))
-
-(defun char-to-int (char)
-  (if (char-num-p char)
-      (- (char-code char) (char-code #\0))
-      nil))
-
 ;; the cur-token represents the next token to be consumed
 ;; parse functions assume that cur-token is the next to be
 ;; 'analyzed' token
@@ -107,19 +89,35 @@
 		  (schar str-exp next-pos))
      :next-pos (1+ next-pos))))
 
-;; generates a parse tree from a string expression
-(defun parse (str-exp)
-  (parse-top-level (make-lexer str-exp)))
+(defun make-lexer (str-exp)
+  ;; advance the freshly minted lexer once to 'start' it
+  ;; cur-token will be ready to be consumed once done
+  (lexer-adv (make-lexer-aux :str-exp str-exp :str-len (length str-exp))))
+
+(defun eol-p (lex)
+  (> (lexer-next-pos lex) (lexer-str-len lex)))
+
+(defun char-num-p (char)
+  (let ((tok-val (char-code char)))
+    (and (>= tok-val (char-code #\0))
+	 (<= tok-val (char-code #\9)))))
+
+(defun char-to-int (char)
+  (if (char-num-p char)
+      (- (char-code char) (char-code #\0))
+      nil))
 
 (defun parse-top-level (lex)
   "parse a top level expression, handles alternation"
   ;; empty expression is represented by nil
   (if (eol-p lex)
-      nil
+      (values nil lex)
       ;; parse the first expression
       (multiple-value-bind (left-exp lex*) (parse-branch lex)
 	(with-slots (cur-tok) lex*
 	  (cond ((eol-p lex*)
+		 (values left-exp lex*))
+		((char= cur-tok #\))
 		 (values left-exp lex*))
 
 		;; continue to parse remaining expression if we encounter an
@@ -136,9 +134,10 @@
 of line or an alternation (|)."
   ;; parse an expression branch
   (with-slots (cur-tok) lex
-    (cond ((eol-p lex) nil)
-	  ((char= cur-tok #\|) nil)
-	  (t (multiple-value-bind (left-exp lex*) (parse-dup lex)
+    (cond ((eol-p lex) (values nil lex))
+	  ((char= cur-tok #\|) (values nil lex))
+	  ((char= cur-tok #\)) (values nil lex))
+	  (t (multiple-value-bind (left-exp lex*) (parse-rep lex)
 	       (multiple-value-bind (right-exp lex**) (parse-branch lex*)
 		 (values (list :concat left-exp right-exp) lex**)))))))
 
@@ -164,28 +163,30 @@ known as a capture group."
       ;; consume '('
       (parse-top-level (lexer-adv lex))
     (case (lexer-cur-tok lex*)
-      ((#\)) (values sub-exp (lexer-adv lex*)))
+      ((#\)) (values (list :sub-exp sub-exp) (lexer-adv lex*)))
       ;; we expect to see ')'
-      (otherwise throw-parse-error lex*))))
+      (otherwise (throw-parse-error lex*)))))
 
-(defun parse-escape (lex))
+(defun parse-escape (lex) (values nil lex))
 
-(defun parse-bracket (lex))
+(defun parse-bracket (lex) (values nil lex))
 
 (defun parse-char (lex)
-  "parses a single character expression")
+  "parses a single character expression"
+  (values (list :char (lexer-cur-tok lex)) (lexer-adv lex)))
 
-
-
-(defun parse-dup (lex)
-  (multiple-value-bind (nondup-exp lex*) (parse-exp lex)
-    (multiple-value-bind (range lex**) (parse-dup-symbol lex*)
+(defun parse-rep (lex)
+  (multiple-value-bind (nonrep-exp lex*) (parse-exp lex)
+    (multiple-value-bind (range lex**) (parse-rep-symbol lex*)
       (if range
-	  (values (list :dup ))
-	  
-	  (values nondup-exp adv)))))
+	  (case (lexer-cur-tok lex**)
+	    ((#\?)
+	     (values (list :dup :nongreedy range nonrep-exp) lex**))
+	    (otherwise
+	     (values (list :dup :greedy range nonrep-exp) lex**)))
+	  (values nonrep-exp lex**)))))
 
-(defun parse-dup-symbol (lex)
+(defun parse-rep-symbol (lex)
   (case (lexer-cur-tok lex)
     ((#\*) ; 0 or more quantifier
      (values '(0 nil) (lexer-adv lex)))
@@ -194,24 +195,29 @@ known as a capture group."
     ((#\?) ; 0 or 1 quantifier
      (values '(0 1) (lexer-adv lex)))
     ((#\{) ; range quantifier
-     (multiple-value-bind (min-range lex*) (parse-range-val (lexer-adv lex))
-       (case (lexer-cur-tok lex*)
-	 ;; parse a second value, for the case {m,n}
-	 ((#\,)
-	  (multiple-value-bind (max-range lex**)
-	      (parse-range-val (lexer-adv lex*))
-	    ;; we expect to see a '}'
-	    (case (lexer-cur-tok lex**)
-	      ((#\}) (values (list min-range max-range) (lexer-adv lex**)))
-	      (otherwise (throw-parse-error lex**)))))
-	 ;; the range is a single value, as in the case {n}
-	 ((#\}) (values (list min-range min-range) (lexer-adv lex*)))
-	 (otherwise (throw-parse-error lex*)))))
+     (parse-range-rep lex))
     (otherwise (values nil lex))))
 
-;; TODO add min/max checks according to POSIX
-(defun parse-range-val (lex)
-  (flet ((parse-num (acc lex)
+(defun parse-range-rep (lex)
+  (multiple-value-bind (min-rep lex*) (parse-rep-val (lexer-adv lex))
+    (case (lexer-cur-tok lex*)
+      ;; parse a second value, for the case {m,n}
+      ((#\,)
+       (multiple-value-bind (max-rep lex**)
+	   (parse-rep-val (lexer-adv lex*))
+	 ;; we expect to see a '}'
+	 (case (lexer-cur-tok lex**)
+	   ((#\})
+	    (if (> min-rep max-rep)
+		(throw-rep-val-invalid-error (lexer-adv lex*) min-rep max-rep)
+		(values (list min-rep max-rep) (lexer-adv lex**))))
+	   (otherwise (throw-parse-error lex**)))))
+      ;; the range is a single value, as in the case {n}
+      ((#\}) (values (list min-rep min-rep) (lexer-adv lex*)))
+      (otherwise (throw-parse-error lex*)))))
+
+(defun parse-rep-val (lex)
+  (labels ((parse-num (acc lex)
 	   (with-slots (cur-tok) lex
 	     (if (or (eol-p lex)
 		     (not (char-num-p cur-tok)))
@@ -220,12 +226,17 @@ known as a capture group."
 			       (char-to-int cur-tok))
 			    (lexer-adv lex))))))
     
-    (parse-num 0 lex)))
+    (multiple-value-bind (val lex*) (parse-num 0 lex)
+      (if (or (< val +re-dup-min+)
+	      (> val +re-dup-max+))
+	  ;; report error with the original lex
+	  (throw-rep-val-oob-error lex val)
+	  (values val lex*)))))
 
 (defun parse-element (lex)
   ;; parse an expression branch
   )
 
-(defun parse-rep (lex)
-  ;; parse an expression branch
-  )
+;; generates a parse tree from a string expression
+(defun parse (str-exp)
+  (parse-top-level (make-lexer str-exp)))
