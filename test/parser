@@ -1,0 +1,36 @@
+;;; -*- Mode: LISP; Syntax: COMMON-LISP; Package: CL-POSIXRE-TEST; Base: 10 -*-
+
+(equal (parse "") nil)
+(equal (parse "a") '(:char #\a))
+(equal (parse "abcde")
+       '(:concat (:char #\a)
+	 (:concat (:char #\b)
+	  (:concat (:char #\c)
+	   (:concat (:char #\d)
+		    (:char #\e))))))
+
+(equal (parse "ab|cd")
+       '(:alt
+	 (:concat (:char #\a) (:char #\b))
+	 (:concat (:char #\c) (:char #\d))))
+
+(equal (parse "a|b|c")
+       '(:alt
+	 (:char #\a)
+	 (:alt
+	  (:char #\b)
+	  (:char #\c))))
+
+(equal (parse "|ab")
+       '(:alt
+	 nil
+	 (:concat (:char #\a) (:char #\b))))
+
+(equal (parse "(ab)")
+       '(:sub-exp (:concat (:char #\a) (:char #\b))))
+
+(equal (parse "a(ab)b")
+       '(:concat (:char #\a)
+	 (:concat
+	  (:sub-exp (:concat (:char #\a) (:char #\b)))
+	  (:char #\b))))

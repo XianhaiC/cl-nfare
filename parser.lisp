@@ -76,6 +76,11 @@
   (cur-tok #\Nul :type character :read-only t)
   (next-pos 0 :type fixnum :read-only t))
 
+(defun make-lexer (str-exp)
+  ;; advance the freshly minted lexer once to 'start' it
+  ;; cur-token will be ready to be consumed once done
+  (lexer-adv (make-lexer-aux :str-exp str-exp :str-len (length str-exp))))
+
 ;; the cur-token represents the next token to be consumed
 ;; parse functions assume that cur-token is the next to be
 ;; 'analyzed' token
@@ -88,11 +93,6 @@
 		  #\Nul
 		  (schar str-exp next-pos))
      :next-pos (1+ next-pos))))
-
-(defun make-lexer (str-exp)
-  ;; advance the freshly minted lexer once to 'start' it
-  ;; cur-token will be ready to be consumed once done
-  (lexer-adv (make-lexer-aux :str-exp str-exp :str-len (length str-exp))))
 
 (defun eol-p (lex)
   (> (lexer-next-pos lex) (lexer-str-len lex)))
@@ -109,37 +109,49 @@
 
 (defun parse-top-level (lex)
   "parse a top level expression, handles alternation"
-  ;; empty expression is represented by nil
-  (if (eol-p lex)
-      (values nil lex)
-      ;; parse the first expression
-      (multiple-value-bind (left-exp lex*) (parse-branch lex)
-	(with-slots (cur-tok) lex*
-	  (cond ((eol-p lex*)
-		 (values left-exp lex*))
-		((char= cur-tok #\))
-		 (values left-exp lex*))
+  (flet ((exp-end-p (lex)
+	   ;; end of expression is either eol or ')'
+	   (or (eol-p lex)
+	       (char= (lexer-cur-tok lex) #\)))))
 
-		;; continue to parse remaining expression if we encounter an
-		;; alternation
-		((char= cur-tok #\|)
-		 (multiple-value-bind (right-exp lex**)
-		     (parse-top-level (lexer-adv lex*))
-		   (values (list :alt left-exp right-exp) lex**)))
+    (if (exp-end-p lex)
+	(values nil lex)
+	;; parse the first expression
+	(multiple-value-bind (left-exp lex*) (parse-branch lex)
+	  (cond
+	    ;; check for end of expression
+	    ((exp-end-p lex*)
+	     (values left-exp lex*))
 
-		(t (throw-parse-error lex*)))))))
+	    ;; otherwise we should encounter an alternation
+	    ((char= (lexer-cur-tok lex*) #\|)
+	     (multiple-value-bind (right-exp lex**)
+		 (parse-top-level (lexer-adv lex*))
+	       (values (list :alt left-exp right-exp) lex**)))
+
+	    (t (throw-parse-error lex*)))))))
 
 (defun parse-branch (lex)
   "parse a string of concatenated expressions. we stop when we encounter the end
 of line or an alternation (|)."
-  ;; parse an expression branch
-  (with-slots (cur-tok) lex
-    (cond ((eol-p lex) (values nil lex))
-	  ((char= cur-tok #\|) (values nil lex))
-	  ((char= cur-tok #\)) (values nil lex))
-	  (t (multiple-value-bind (left-exp lex*) (parse-rep lex)
-	       (multiple-value-bind (right-exp lex**) (parse-branch lex*)
-		 (values (list :concat left-exp right-exp) lex**)))))))
+  (flet ((exp-end-p (lex)
+	   ;; end of expression is either eol, '|', or ')'
+	   (with-slots (cur-tok) lex
+	     (or (eol-p lex)
+		 (char= cur-tok #\|)
+		 (char= cur-tok #\))))))
+
+    (if (exp-end-p lex)
+	(values nil lex)
+
+	;; parse the first expression element
+	(multiple-value-bind (left-exp lex*) (parse-rep lex)
+	  (if (exp-end-p lex*)
+	      (values left-exp lex*)
+
+	      ;; parse another if there's more
+	      (multiple-value-bind (right-exp lex**) (parse-branch lex*)
+		(values (list :concat left-exp right-exp) lex**)))))))
 
 (defun parse-exp (lex)
   (case (lexer-cur-tok lex)
@@ -232,10 +244,6 @@ known as a capture group."
 	  ;; report error with the original lex
 	  (throw-rep-val-oob-error lex val)
 	  (values val lex*)))))
-
-(defun parse-element (lex)
-  ;; parse an expression branch
-  )
 
 ;; generates a parse tree from a string expression
 (defun parse (str-exp)

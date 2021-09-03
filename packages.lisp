@@ -4,4 +4,4 @@
   (:nicknames :pre)
   (:use :cl)
   (:export
-   :parse-string))
+   :parse))
