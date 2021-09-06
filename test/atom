@@ -1,0 +1,31 @@
+;;; -*- Mode: LISP; Syntax: COMMON-LISP; Package: CL-POSIXRE-TEST; Base: 10 -*-
+
+(let ((atom (make-instance atom-char :str "a")))
+     (match-p atom #\a))
+
+(let ((atom (make-instance atom-bracket :str "[abc]")))
+     (and
+     (match-p atom #\a)
+     (match-p atom #\b)
+     (match-p atom #\c)))
+
+(let ((atom (make-instance atom-wildcard :str ".")))
+     (and
+     (match-p atom #\a)
+     (match-p atom #\b)
+     (match-p atom #\c)
+     (match-p atom #\m)
+     (match-p atom #\?)))
+
+(let ((atom (make-instance atom-char-class :str "\d")))
+     (and
+     (match-p atom #\0)
+     (match-p atom #\1)
+     (match-p atom #\2)
+     (match-p atom #\3)
+     (match-p atom #\4)
+     (match-p atom #\5)
+     (match-p atom #\6)
+     (match-p atom #\7)
+     (match-p atom #\8)
+     (match-p atom #\9)))

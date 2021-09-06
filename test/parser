@@ -34,3 +34,21 @@
 	 (:concat
 	  (:sub-exp (:concat (:char #\a) (:char #\b)))
 	  (:char #\b))))
+
+(equal (parse "a*")
+       '(:rep :greedy (0 nil) (:char #\a)))
+
+(equal (parse "a+")
+       '(:rep :greedy (1 nil) (:char #\a)))
+
+(equal (parse "a?")
+       '(:rep :greedy (0 1) (:char #\a)))
+
+(equal (parse "a{3}")
+       '(:rep :greedy (3 3) (:char #\a)))
+
+(equal (parse "a{3,5}")
+       '(:rep :greedy (3 5) (:char #\a)))
+
+(equal (parse "a*?")
+       '(:rep :nongreedy (0 nil) (:char #\a)))

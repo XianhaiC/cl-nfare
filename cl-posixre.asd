@@ -12,6 +12,8 @@
     :components ((:file "packages")
 		 (:file "constants")
 		 (:file "errors")
+		 (:file "exp")
+		 (:file "atom")
 		 (:file "parser")))
 
 (defsystem :cl-posixre/test

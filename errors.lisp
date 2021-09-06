@@ -22,3 +22,8 @@
       nil
       "position [~a]: invalid repetition value ~a, cannot be less than ~a"
       (1- next-pos) max min))))
+
+
+(defun throw-invalid-atom-char-error (exp)
+  (error
+   (format nil "expression '~a' is not a valid atom char expression" exp)))

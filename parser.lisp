@@ -127,7 +127,8 @@
 	    ((char= (lexer-cur-tok lex*) #\|)
 	     (multiple-value-bind (right-exp lex**)
 		 (parse-top-level (lexer-adv lex*))
-	       (values (list :alt left-exp right-exp) lex**)))
+	       (values (make-instance 'exp-alt :left left-exp :right right-exp)
+		       lex**)))
 
 	    (t (throw-parse-error lex*)))))))
 
@@ -151,7 +152,9 @@ of line or an alternation (|)."
 
 	      ;; parse another if there's more
 	      (multiple-value-bind (right-exp lex**) (parse-branch lex*)
-		(values (list :concat left-exp right-exp) lex**)))))))
+		(values (make-instance 'exp-concat
+				       :left left-exp :right right-exp)
+			lex**)))))))
 
 (defun parse-exp (lex)
   (case (lexer-cur-tok lex)
@@ -168,6 +171,7 @@ of line or an alternation (|)."
     (otherwise
      (parse-char lex))))
 
+;; NOTE: may need to introduce a new sub expression type
 (defun parse-sub-exp (lex)
   "parses a sub-expression, an expression within '(' and ')', ie. (abc), also
 known as a capture group."
@@ -175,7 +179,7 @@ known as a capture group."
       ;; consume '('
       (parse-top-level (lexer-adv lex))
     (case (lexer-cur-tok lex*)
-      ((#\)) (values (list :sub-exp sub-exp) (lexer-adv lex*)))
+      ((#\)) (values sub-exp (lexer-adv lex*)))
       ;; we expect to see ')'
       (otherwise (throw-parse-error lex*)))))
 
@@ -185,7 +189,7 @@ known as a capture group."
 
 (defun parse-char (lex)
   "parses a single character expression"
-  (values (list :char (lexer-cur-tok lex)) (lexer-adv lex)))
+  (values (make-instance 'atom-char :val (lexer-cur-tok lex)) (lexer-adv lex)))
 
 (defun parse-rep (lex)
   (multiple-value-bind (nonrep-exp lex*) (parse-exp lex)
@@ -193,9 +197,18 @@ known as a capture group."
       (if range
 	  (case (lexer-cur-tok lex**)
 	    ((#\?)
-	     (values (list :dup :nongreedy range nonrep-exp) lex**))
+	     (values (make-instance 'exp-rep
+				    :greedy-p nil
+				    :range range
+				    :sub nonrep-exp)
+		     (lexer-adv lex**)))
 	    (otherwise
-	     (values (list :dup :greedy range nonrep-exp) lex**)))
+	     (values (make-instance 'exp-rep
+				    :greedy-p t
+				    :range range
+				    :sub nonrep-exp)
+
+		     lex**)))
 	  (values nonrep-exp lex**)))))
 
 (defun parse-rep-symbol (lex)
