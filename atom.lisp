@@ -1,6 +1,6 @@
 (in-package :cl-posixre)
 
-(defclass exp-atom (exp)
+(defclass exp-atom (exp-base)
   ()
   (:documentation "represents an atomic expression pattern, such as a single
  char, a bracket expression, a character class, or a wildcard"))

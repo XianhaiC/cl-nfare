@@ -14,6 +14,7 @@
 		 (:file "errors")
 		 (:file "exp")
 		 (:file "atom")
+		 (:file "nfa")
 		 (:file "parser")))
 
 (defsystem :cl-posixre/test

@@ -3,5 +3,5 @@
 (defpackage :cl-posixre
   (:nicknames :pre)
   (:use :cl)
-  (:export
-   :parse))
+  (:export :parse
+	   :nfa))
